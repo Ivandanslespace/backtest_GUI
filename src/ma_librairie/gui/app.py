@@ -65,14 +65,32 @@ QPushButton#SecondaryButton {
 QPushButton#SecondaryButton:hover {
     background: #e4ecff;
 }
-QLineEdit, QComboBox, QPlainTextEdit, QListWidget, QTableView, QTabWidget::pane {
+QLineEdit, QPlainTextEdit, QListWidget, QTableView, QTabWidget::pane {
     background: #fbfcfe;
     border: 1px solid #dbe3ef;
     border-radius: 12px;
     padding: 6px;
 }
+QComboBox {
+    background: #fbfcfe;
+    border: 1px solid #dbe3ef;
+    border-radius: 12px;
+    padding: 6px 34px 6px 8px;
+}
 QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 28px;
     border: none;
+    border-left: 1px solid #dbe3ef;
+    background: #f1f5fb;
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+QComboBox::down-arrow {
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
 }
 QListWidget {
     padding: 8px;
@@ -85,6 +103,14 @@ QListWidget::item {
 QListWidget::item:selected {
     background: #edf2ff;
     color: #1f3f8e;
+}
+QListWidget#MetricsList {
+    padding: 6px;
+}
+QListWidget#MetricsList::item {
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin: 2px;
 }
 QTabBar::tab {
     background: #eef3ff;

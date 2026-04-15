@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -169,8 +170,17 @@ class ConfigView(QWidget):
         self.bench_combo = QComboBox()
         self.bench_combo.setEditable(True)
         self.metrics_list = QListWidget()
+        self.metrics_list.setObjectName("MetricsList")
         self.metrics_list.setSelectionMode(QListWidget.MultiSelection)
-        self.metrics_list.setMinimumHeight(160)
+        self.metrics_list.setViewMode(QListView.IconMode)
+        self.metrics_list.setFlow(QListView.LeftToRight)
+        self.metrics_list.setWrapping(True)
+        self.metrics_list.setResizeMode(QListView.Adjust)
+        self.metrics_list.setMovement(QListView.Static)
+        self.metrics_list.setUniformItemSizes(True)
+        self.metrics_list.setSpacing(4)
+        self.metrics_list.setGridSize(QSize(200, 34))
+        self.metrics_list.setMinimumHeight(118)
         self.custom_metrics_edit = QLineEdit()
         self.custom_metrics_edit.setPlaceholderText("MetricA, MetricB")
         self.percentile_edit = QLineEdit()
