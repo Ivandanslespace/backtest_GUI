@@ -174,6 +174,7 @@ class ConfigView(QWidget):
         general_grid.setVerticalSpacing(10)
         general_grid.setColumnStretch(1, 1)
         general_grid.setColumnStretch(3, 1)
+        general_grid.setColumnStretch(5, 1)
 
         self.ptf_name_edit = QLineEdit()
         self.bench_combo = QComboBox()
@@ -222,42 +223,91 @@ class ConfigView(QWidget):
         self.reco_facto_edit.setPlaceholderText("5 valeurs separees par des virgules")
         self.reco_facto_edit.setFixedHeight(60)
 
-        def add_pair(
+        def add_triplet(
             row: int,
-            left_label: str,
-            left_widget: QWidget,
-            right_label: str,
-            right_widget: QWidget,
+            first_label: str,
+            first_widget: QWidget,
+            second_label: str,
+            second_widget: QWidget,
+            third_label: str,
+            third_widget: QWidget,
         ) -> int:
-            general_grid.addWidget(QLabel(left_label), row, 0, alignment=Qt.AlignRight | Qt.AlignVCenter)
-            general_grid.addWidget(left_widget, row, 1)
-            general_grid.addWidget(QLabel(right_label), row, 2, alignment=Qt.AlignRight | Qt.AlignVCenter)
-            general_grid.addWidget(right_widget, row, 3)
+            general_grid.addWidget(QLabel(first_label), row, 0, alignment=Qt.AlignRight | Qt.AlignVCenter)
+            general_grid.addWidget(first_widget, row, 1)
+            general_grid.addWidget(QLabel(second_label), row, 2, alignment=Qt.AlignRight | Qt.AlignVCenter)
+            general_grid.addWidget(second_widget, row, 3)
+            general_grid.addWidget(QLabel(third_label), row, 4, alignment=Qt.AlignRight | Qt.AlignVCenter)
+            general_grid.addWidget(third_widget, row, 5)
             return row + 1
 
         row = 0
-        row = add_pair(row, "Nom du portefeuille", self.ptf_name_edit, "Benchmark", self.bench_combo)
+        row = add_triplet(
+            row,
+            "Nom du portefeuille",
+            self.ptf_name_edit,
+            "Benchmark",
+            self.bench_combo,
+            "Percentile",
+            self.percentile_edit,
+        )
 
         general_grid.addWidget(QLabel("Metrics detectees"), row, 0, alignment=Qt.AlignRight | Qt.AlignTop)
-        general_grid.addWidget(self.metrics_list, row, 1, 1, 3)
+        general_grid.addWidget(self.metrics_list, row, 1, 1, 5)
         row += 1
 
-        row = add_pair(row, "Metrics manuelles", self.custom_metrics_edit, "Percentile", self.percentile_edit)
-        row = add_pair(row, "Ponderation", self.ponderation_combo, "Cut market cap", self.cut_mkt_cap_edit)
-        row = add_pair(row, "ESG exclusion", self.esg_exclusion_edit, "Score pivot ESG", self.score_pivot_esg_edit)
-        row = add_pair(row, "Score neutral", self.score_neutral_combo, "Weight neutral", self.weight_neutral_combo)
-        row = add_pair(row, "Top mandatory", self.top_mandatory_edit, "Cap weight threshold", self.cap_weight_threshold_edit)
-        row = add_pair(row, "Date de debut", self.start_date_edit, "Frequence rebalancement", self.freq_rebal_edit)
-        row = add_pair(row, "Screen start date", self.screen_start_date_combo, "Fill method", self.fill_method_combo)
-        row = add_pair(row, "Max weight", self.max_weight_edit, "Reco facto", self.reco_facto_edit)
+        row = add_triplet(
+            row,
+            "Metrics manuelles",
+            self.custom_metrics_edit,
+            "Ponderation",
+            self.ponderation_combo,
+            "Cut market cap",
+            self.cut_mkt_cap_edit,
+        )
+        row = add_triplet(
+            row,
+            "ESG exclusion",
+            self.esg_exclusion_edit,
+            "Score pivot ESG",
+            self.score_pivot_esg_edit,
+            "Max weight",
+            self.max_weight_edit,
+        )
+        row = add_triplet(
+            row,
+            "Score neutral",
+            self.score_neutral_combo,
+            "Weight neutral",
+            self.weight_neutral_combo,
+            "Date de debut",
+            self.start_date_edit,
+        )
+        row = add_triplet(
+            row,
+            "Top mandatory",
+            self.top_mandatory_edit,
+            "Cap weight threshold",
+            self.cap_weight_threshold_edit,
+            "Frequence rebalancement",
+            self.freq_rebal_edit,
+        )
+        row = add_triplet(
+            row,
+            "Screen start date",
+            self.screen_start_date_combo,
+            "Fill method",
+            self.fill_method_combo,
+            "Reco facto",
+            self.reco_facto_edit,
+        )
 
         general_grid.addWidget(self.top_checkbox, row, 0, 1, 2)
         general_grid.addWidget(self.mode_monthly_prod_checkbox, row, 2, 1, 2)
+        general_grid.addWidget(self.sector_neutral_checkbox, row, 4, 1, 2)
         row += 1
 
         general_grid.addWidget(QLabel("Reco secto"), row, 0, alignment=Qt.AlignRight | Qt.AlignTop)
-        general_grid.addWidget(self.reco_secto_edit, row, 1)
-        general_grid.addWidget(self.sector_neutral_checkbox, row, 2, 1, 2)
+        general_grid.addWidget(self.reco_secto_edit, row, 1, 1, 5)
 
         layout.addWidget(general_card)
         layout.addStretch(1)
