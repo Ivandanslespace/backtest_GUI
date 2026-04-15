@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,7 +21,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
-    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -45,6 +45,17 @@ def _make_path_row(button_text: str) -> tuple[QWidget, QLineEdit, QPushButton]:
     return container, line_edit, button
 
 
+def _format_compact_lines(items: list[str], items_per_line: int) -> str:
+    """Formate une liste sur plusieurs lignes compactes."""
+
+    if not items:
+        return ""
+    return "\n".join(
+        " | ".join(items[index : index + items_per_line])
+        for index in range(0, len(items), items_per_line)
+    )
+
+
 class ConfigView(QWidget):
     """Page de configuration et d'inspection des donnees."""
 
@@ -63,15 +74,9 @@ class ConfigView(QWidget):
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        root_layout.addWidget(scroll_area)
-
-        content = QWidget()
-        scroll_area.setWidget(content)
-        content_layout = QVBoxLayout(content)
+        content_layout = QVBoxLayout()
         content_layout.setSpacing(20)
+        root_layout.addLayout(content_layout)
 
         header = QFrame()
         header.setObjectName("Card")
@@ -164,7 +169,11 @@ class ConfigView(QWidget):
 
         general_card = QFrame()
         general_card.setObjectName("Card")
-        general_form = QFormLayout(general_card)
+        general_grid = QGridLayout(general_card)
+        general_grid.setHorizontalSpacing(14)
+        general_grid.setVerticalSpacing(10)
+        general_grid.setColumnStretch(1, 1)
+        general_grid.setColumnStretch(3, 1)
 
         self.ptf_name_edit = QLineEdit()
         self.bench_combo = QComboBox()
@@ -213,29 +222,42 @@ class ConfigView(QWidget):
         self.reco_facto_edit.setPlaceholderText("5 valeurs separees par des virgules")
         self.reco_facto_edit.setFixedHeight(60)
 
-        general_form.addRow("Nom du portefeuille", self.ptf_name_edit)
-        general_form.addRow("Benchmark", self.bench_combo)
-        general_form.addRow("Metrics detectees", self.metrics_list)
-        general_form.addRow("Metrics manuelles", self.custom_metrics_edit)
-        general_form.addRow("Percentile", self.percentile_edit)
-        general_form.addRow("", self.top_checkbox)
-        general_form.addRow("Ponderation", self.ponderation_combo)
-        general_form.addRow("ESG exclusion", self.esg_exclusion_edit)
-        general_form.addRow("Cut market cap", self.cut_mkt_cap_edit)
-        general_form.addRow("Score pivot ESG", self.score_pivot_esg_edit)
-        general_form.addRow("Score neutral", self.score_neutral_combo)
-        general_form.addRow("Weight neutral", self.weight_neutral_combo)
-        general_form.addRow("Top mandatory", self.top_mandatory_edit)
-        general_form.addRow("Cap weight threshold", self.cap_weight_threshold_edit)
-        general_form.addRow("", self.mode_monthly_prod_checkbox)
-        general_form.addRow("Date de debut", self.start_date_edit)
-        general_form.addRow("Frequence rebalancement", self.freq_rebal_edit)
-        general_form.addRow("Screen start date", self.screen_start_date_combo)
-        general_form.addRow("Fill method", self.fill_method_combo)
-        general_form.addRow("Max weight", self.max_weight_edit)
-        general_form.addRow("", self.sector_neutral_checkbox)
-        general_form.addRow("Reco secto", self.reco_secto_edit)
-        general_form.addRow("Reco facto", self.reco_facto_edit)
+        def add_pair(
+            row: int,
+            left_label: str,
+            left_widget: QWidget,
+            right_label: str,
+            right_widget: QWidget,
+        ) -> int:
+            general_grid.addWidget(QLabel(left_label), row, 0, alignment=Qt.AlignRight | Qt.AlignVCenter)
+            general_grid.addWidget(left_widget, row, 1)
+            general_grid.addWidget(QLabel(right_label), row, 2, alignment=Qt.AlignRight | Qt.AlignVCenter)
+            general_grid.addWidget(right_widget, row, 3)
+            return row + 1
+
+        row = 0
+        row = add_pair(row, "Nom du portefeuille", self.ptf_name_edit, "Benchmark", self.bench_combo)
+
+        general_grid.addWidget(QLabel("Metrics detectees"), row, 0, alignment=Qt.AlignRight | Qt.AlignTop)
+        general_grid.addWidget(self.metrics_list, row, 1, 1, 3)
+        row += 1
+
+        row = add_pair(row, "Metrics manuelles", self.custom_metrics_edit, "Percentile", self.percentile_edit)
+        row = add_pair(row, "Ponderation", self.ponderation_combo, "Cut market cap", self.cut_mkt_cap_edit)
+        row = add_pair(row, "ESG exclusion", self.esg_exclusion_edit, "Score pivot ESG", self.score_pivot_esg_edit)
+        row = add_pair(row, "Score neutral", self.score_neutral_combo, "Weight neutral", self.weight_neutral_combo)
+        row = add_pair(row, "Top mandatory", self.top_mandatory_edit, "Cap weight threshold", self.cap_weight_threshold_edit)
+        row = add_pair(row, "Date de debut", self.start_date_edit, "Frequence rebalancement", self.freq_rebal_edit)
+        row = add_pair(row, "Screen start date", self.screen_start_date_combo, "Fill method", self.fill_method_combo)
+        row = add_pair(row, "Max weight", self.max_weight_edit, "Reco facto", self.reco_facto_edit)
+
+        general_grid.addWidget(self.top_checkbox, row, 0, 1, 2)
+        general_grid.addWidget(self.mode_monthly_prod_checkbox, row, 2, 1, 2)
+        row += 1
+
+        general_grid.addWidget(QLabel("Reco secto"), row, 0, alignment=Qt.AlignRight | Qt.AlignTop)
+        general_grid.addWidget(self.reco_secto_edit, row, 1)
+        general_grid.addWidget(self.sector_neutral_checkbox, row, 2, 1, 2)
 
         layout.addWidget(general_card)
         layout.addStretch(1)
@@ -288,7 +310,11 @@ class ConfigView(QWidget):
 
         card = QFrame()
         card.setObjectName("Card")
-        card_layout = QVBoxLayout(card)
+        card_layout = QGridLayout(card)
+        card_layout.setHorizontalSpacing(14)
+        card_layout.setVerticalSpacing(10)
+        card_layout.setColumnStretch(0, 1)
+        card_layout.setColumnStretch(1, 1)
 
         self.inspection_summary = QLabel("Aucune inspection disponible.")
         self.inspection_summary.setWordWrap(True)
@@ -296,19 +322,22 @@ class ConfigView(QWidget):
 
         self.detected_benchmarks = QPlainTextEdit()
         self.detected_benchmarks.setReadOnly(True)
+        self.detected_benchmarks.setMaximumHeight(110)
         self.detected_metrics = QPlainTextEdit()
         self.detected_metrics.setReadOnly(True)
+        self.detected_metrics.setMaximumHeight(110)
         self.detected_columns = QPlainTextEdit()
         self.detected_columns.setReadOnly(True)
+        self.detected_columns.setMaximumHeight(160)
 
-        card_layout.addWidget(QLabel("Resume"))
-        card_layout.addWidget(self.inspection_summary)
-        card_layout.addWidget(QLabel("Benchmarks detectes"))
-        card_layout.addWidget(self.detected_benchmarks)
-        card_layout.addWidget(QLabel("Metrics candidates"))
-        card_layout.addWidget(self.detected_metrics)
-        card_layout.addWidget(QLabel("Colonnes du screen"))
-        card_layout.addWidget(self.detected_columns)
+        card_layout.addWidget(QLabel("Resume"), 0, 0, 1, 2)
+        card_layout.addWidget(self.inspection_summary, 1, 0, 1, 2)
+        card_layout.addWidget(QLabel("Benchmarks detectes"), 2, 0)
+        card_layout.addWidget(QLabel("Metrics candidates"), 2, 1)
+        card_layout.addWidget(self.detected_benchmarks, 3, 0)
+        card_layout.addWidget(self.detected_metrics, 3, 1)
+        card_layout.addWidget(QLabel("Colonnes du screen"), 4, 0, 1, 2)
+        card_layout.addWidget(self.detected_columns, 5, 0, 1, 2)
 
         layout.addWidget(card)
         layout.addStretch(1)
@@ -498,7 +527,7 @@ class ConfigView(QWidget):
 
         self.detected_benchmarks.setPlainText("\n".join(payload.get("screen_benchmarks", [])))
         self.detected_metrics.setPlainText("\n".join(payload.get("screen_metrics", [])))
-        self.detected_columns.setPlainText("\n".join(payload.get("screen_columns", [])))
+        self.detected_columns.setPlainText(_format_compact_lines(payload.get("screen_columns", []), items_per_line=4))
         self.inspection_summary.setText(
             " | ".join(
                 [
