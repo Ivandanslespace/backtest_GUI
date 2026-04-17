@@ -25,7 +25,7 @@ try:
 except ImportError:  # pragma: no cover - depend de l'environnement Qt
     QWebEngineView = None
 
-from bt_gui.core.artifacts import get_latest_run_directory, read_manifest
+from bt_gui.core.artifacts import list_run_directories, read_manifest
 from bt_gui.core.backtest_runner import ServiceResult, SingleRunResult
 
 RAW_VALUE_ROLE = Qt.UserRole + 1
@@ -281,7 +281,7 @@ class ResultsView(QWidget):
         else:
             self._reset_artifact_views()
 
-    def load_run_directory(self, run_dir: str | Path) -> None:
+    def load_run_directory(self, run_dir: str | Path, *, replace_selector: bool = True) -> None:
         """Charge un run a partir de son dossier."""
 
         path = Path(run_dir)
@@ -291,10 +291,11 @@ class ResultsView(QWidget):
         self._reset_filters()
         manifest = read_manifest(path)
         history_message = manifest.get("message", "Run charge depuis l'historique")
-        self.run_selector.blockSignals(True)
-        self.run_selector.clear()
-        self.run_selector.addItem(f"{path.parent.name} / {path.name}")
-        self.run_selector.blockSignals(False)
+        if replace_selector:
+            self.run_selector.blockSignals(True)
+            self.run_selector.clear()
+            self.run_selector.addItem(f"{path.parent.name} / {path.name}", userData=str(path))
+            self.run_selector.blockSignals(False)
         self.summary_label.setText(
             "\n".join(
                 [
@@ -352,15 +353,27 @@ class ResultsView(QWidget):
         if isinstance(run, SingleRunResult):
             self._reset_filters()
             self._set_current_run(run)
+        elif isinstance(run, (str, Path)):
+            self.load_run_directory(run, replace_selector=False)
 
     def _load_latest_history_result(self) -> None:
-        """Charge a la demande le run historique global le plus recent."""
+        """Charge a la demande l'ensemble des runs historiques."""
 
-        latest_run = get_latest_run_directory()
-        if latest_run is None:
+        run_dirs = list_run_directories()
+        if not run_dirs:
             QMessageBox.information(self, "Aucun historique", "Aucun run historique n'est disponible.")
             return
-        self.load_run_directory(latest_run)
+        self._current_result = None
+        self._current_run = None
+        self._history_run_dir = None
+        self._reset_filters()
+        self.run_selector.blockSignals(True)
+        self.run_selector.clear()
+        for run_dir in run_dirs:
+            self.run_selector.addItem(f"{run_dir.parent.name} / {run_dir.name}", userData=str(run_dir))
+        self.run_selector.setCurrentIndex(0)
+        self.run_selector.blockSignals(False)
+        self._load_selected_run()
 
     def _enable_sorting(self) -> None:
         """Active le tri manuel pour les tables qui le supportent."""
