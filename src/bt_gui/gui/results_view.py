@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTableView,
@@ -19,9 +20,15 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+try:
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+except ImportError:  # pragma: no cover - depend de l'environnement Qt
+    QWebEngineView = None
 
 from bt_gui.core.artifacts import read_manifest
 from bt_gui.core.backtest_runner import ServiceResult, SingleRunResult
+
+RAW_VALUE_ROLE = Qt.UserRole + 1
 
 
 class DataFrameTableModel(QAbstractTableModel):
@@ -45,10 +52,14 @@ class DataFrameTableModel(QAbstractTableModel):
         return 0 if parent and parent.isValid() else len(self._dataframe.columns)
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
-        if not index.isValid() or role != Qt.DisplayRole:
+        if not index.isValid():
             return None
         value = self._dataframe.iat[index.row(), index.column()]
-        return "" if pd.isna(value) else str(value)
+        if role == Qt.DisplayRole:
+            return "" if pd.isna(value) else str(value)
+        if role == RAW_VALUE_ROLE:
+            return None if pd.isna(value) else value
+        return None
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
         if role != Qt.DisplayRole:
@@ -56,6 +67,63 @@ class DataFrameTableModel(QAbstractTableModel):
         if orientation == Qt.Horizontal:
             return str(self._dataframe.columns[section]) if section < len(self._dataframe.columns) else ""
         return str(self._dataframe.index[section]) if section < len(self._dataframe.index) else ""
+
+
+class DataFrameFilterProxyModel(QSortFilterProxyModel):
+    """Proxy de tri et filtrage pour les tables pandas."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._filter_text = ""
+        self.setDynamicSortFilter(True)
+        self.setSortCaseSensitivity(Qt.CaseInsensitive)
+
+    def set_filter_text(self, text: str) -> None:
+        self._filter_text = text.strip().casefold()
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
+        if not self._filter_text:
+            return True
+        model = self.sourceModel()
+        if model is None:
+            return True
+        for column in range(model.columnCount(source_parent)):
+            index = model.index(source_row, column, source_parent)
+            value = index.data(Qt.DisplayRole)
+            if value is not None and self._filter_text in str(value).casefold():
+                return True
+        return False
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        left_value = left.data(RAW_VALUE_ROLE)
+        right_value = right.data(RAW_VALUE_ROLE)
+        if left_value is None:
+            return right_value is not None
+        if right_value is None:
+            return False
+        try:
+            return bool(left_value < right_value)
+        except TypeError:
+            return str(left.data(Qt.DisplayRole)).casefold() < str(right.data(Qt.DisplayRole)).casefold()
+
+
+class PlotWindow(QWidget):
+    """Fenetre dediee a l'affichage du plot."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        if QWebEngineView is None:
+            raise RuntimeError("Qt WebEngine est indisponible.")
+        self.setWindowTitle("Perf plot")
+        self.resize(1200, 800)
+        layout = QVBoxLayout(self)
+        self._view = QWebEngineView(self)
+        layout.addWidget(self._view)
+
+    def load_plot(self, plot_path: Path) -> None:
+        self.setWindowTitle(f"Perf plot - {plot_path.parent.name}")
+        self._view.load(QUrl.fromLocalFile(str(plot_path.resolve())))
 
 
 class ResultsView(QWidget):
@@ -66,6 +134,7 @@ class ResultsView(QWidget):
         self._current_result: ServiceResult | None = None
         self._current_run: SingleRunResult | None = None
         self._history_run_dir: Path | None = None
+        self._plot_window: PlotWindow | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -87,7 +156,7 @@ class ResultsView(QWidget):
         self.run_selector = QComboBox()
         self.run_selector.currentIndexChanged.connect(self._load_selected_run)
         self.open_folder_button = QPushButton("Ouvrir le dossier")
-        self.open_plot_button = QPushButton("Ouvrir le plot")
+        self.open_plot_button = QPushButton("Afficher le plot")
         self.open_plot_button.setObjectName("SecondaryButton")
         self.open_log_button = QPushButton("Ouvrir le journal")
         self.open_log_button.setObjectName("SecondaryButton")
@@ -109,22 +178,46 @@ class ResultsView(QWidget):
         self.perf_ptf_model = DataFrameTableModel()
         self.perf_bench_model = DataFrameTableModel()
 
+        self.sec_list_proxy = DataFrameFilterProxyModel(self)
+        self.sec_list_proxy.setSourceModel(self.sec_list_model)
+        self.exclusions_proxy = DataFrameFilterProxyModel(self)
+        self.exclusions_proxy.setSourceModel(self.exclusions_model)
+
+        self.sec_list_filter = QLineEdit()
+        self.sec_list_filter.setPlaceholderText("Filtrer la sec list...")
+        self.sec_list_filter.textChanged.connect(self.sec_list_proxy.set_filter_text)
+        self.exclusions_filter = QLineEdit()
+        self.exclusions_filter.setPlaceholderText("Filtrer les exclusions...")
+        self.exclusions_filter.textChanged.connect(self.exclusions_proxy.set_filter_text)
+
         self.sec_list_table = QTableView()
-        self.sec_list_table.setModel(self.sec_list_model)
+        self.sec_list_table.setModel(self.sec_list_proxy)
+        self.sec_list_table.setSortingEnabled(True)
         self.exclusions_table = QTableView()
-        self.exclusions_table.setModel(self.exclusions_model)
+        self.exclusions_table.setModel(self.exclusions_proxy)
+        self.exclusions_table.setSortingEnabled(True)
         self.perf_ptf_table = QTableView()
         self.perf_ptf_table.setModel(self.perf_ptf_model)
         self.perf_bench_table = QTableView()
         self.perf_bench_table.setModel(self.perf_bench_model)
 
-        self.tabs.addTab(self.sec_list_table, "Sec list")
-        self.tabs.addTab(self.exclusions_table, "Exclusions")
+        sec_list_tab = QWidget()
+        sec_list_layout = QVBoxLayout(sec_list_tab)
+        sec_list_layout.addWidget(self.sec_list_filter)
+        sec_list_layout.addWidget(self.sec_list_table)
+
+        exclusions_tab = QWidget()
+        exclusions_layout = QVBoxLayout(exclusions_tab)
+        exclusions_layout.addWidget(self.exclusions_filter)
+        exclusions_layout.addWidget(self.exclusions_table)
+
+        self.tabs.addTab(sec_list_tab, "Sec list")
+        self.tabs.addTab(exclusions_tab, "Exclusions")
         self.tabs.addTab(self.perf_ptf_table, "Perf PTF")
         self.tabs.addTab(self.perf_bench_table, "Perf Bench")
 
         self.open_folder_button.clicked.connect(lambda: self._open_current_path("run_dir"))
-        self.open_plot_button.clicked.connect(lambda: self._open_current_path("plot"))
+        self.open_plot_button.clicked.connect(self._open_plot_window)
         self.open_log_button.clicked.connect(lambda: self._open_current_path("run_log"))
 
     def load_service_result(self, result: ServiceResult) -> None:
@@ -132,6 +225,7 @@ class ResultsView(QWidget):
 
         self._current_result = result
         self._history_run_dir = None
+        self._reset_filters()
         self.run_selector.clear()
         for run in result.runs:
             self.run_selector.addItem(run.name, userData=run)
@@ -144,6 +238,7 @@ class ResultsView(QWidget):
         path = Path(run_dir)
         self._history_run_dir = path
         self._current_run = None
+        self._reset_filters()
         manifest = read_manifest(path)
         summary = manifest.get("message", "Run charge depuis l'historique")
         self.summary_label.setText(summary)
@@ -178,6 +273,7 @@ class ResultsView(QWidget):
 
         run = self.run_selector.currentData()
         if isinstance(run, SingleRunResult):
+            self._reset_filters()
             self._set_current_run(run)
 
     def _load_dataframe_into_model(self, file_path: Path | None, model: DataFrameTableModel) -> None:
@@ -192,10 +288,16 @@ class ResultsView(QWidget):
             dataframe = pd.read_excel(file_path)
         else:
             dataframe = pd.read_csv(file_path)
-        model.set_dataframe(dataframe.head(500))
+        model.set_dataframe(dataframe)
 
-    def _open_current_path(self, attribute_name: str) -> None:
-        """Ouvre un chemin associe au run courant."""
+    def _reset_filters(self) -> None:
+        """Reinitialise les filtres de table."""
+
+        self.sec_list_filter.clear()
+        self.exclusions_filter.clear()
+
+    def _resolve_current_path(self, attribute_name: str) -> Path | None:
+        """Retourne le chemin associe au run courant."""
 
         path = None
         if self._current_run is not None:
@@ -210,13 +312,38 @@ class ResultsView(QWidget):
                 path = self._history_run_dir / "plot.html"
             elif attribute_name == "run_log":
                 path = self._history_run_dir / "run.log"
+        return Path(path) if path is not None else None
 
+    def _open_current_path(self, attribute_name: str) -> None:
+        """Ouvre un chemin associe au run courant."""
+
+        path = self._resolve_current_path(attribute_name)
         if path is None:
             QMessageBox.information(self, "Aucun run", "Aucun run n'est actuellement charge.")
             return
 
-        if path is None or not Path(path).exists():
+        if not path.exists():
             QMessageBox.information(self, "Fichier absent", "Le fichier demande n'est pas disponible.")
             return
 
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path))))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _open_plot_window(self) -> None:
+        """Ouvre le plot dans une fenetre dediee."""
+
+        path = self._resolve_current_path("plot")
+        if path is None:
+            QMessageBox.information(self, "Aucun run", "Aucun run n'est actuellement charge.")
+            return
+        if not path.exists():
+            QMessageBox.information(self, "Fichier absent", "Le plot n'est pas disponible.")
+            return
+        if QWebEngineView is None:
+            QMessageBox.information(self, "Module absent", "Qt WebEngine n'est pas disponible sur cette machine.")
+            return
+        if self._plot_window is None:
+            self._plot_window = PlotWindow()
+        self._plot_window.load_plot(path)
+        self._plot_window.show()
+        self._plot_window.raise_()
+        self._plot_window.activateWindow()
