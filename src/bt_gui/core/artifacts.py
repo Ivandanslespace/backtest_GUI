@@ -90,13 +90,13 @@ def save_manifest(run_dir: Path, payload: dict[str, Any]) -> Path:
 
 
 def _backup_path(target: Path, suffix: str) -> Path:
-    """返回同名备份文件路径。"""
+    """Retourne le chemin du fichier de sauvegarde associe."""
 
     return target.parent / f"{target.stem}{suffix}"
 
 
 def save_dataframe(dataframe: pd.DataFrame | None, target: Path) -> Path | None:
-    """保存 DataFrame，主文件用 parquet，Excel 作为备份。"""
+    """Sauvegarde un DataFrame en parquet avec une copie Excel."""
 
     if dataframe is None or dataframe.empty:
         return None
@@ -110,7 +110,7 @@ def save_dataframe(dataframe: pd.DataFrame | None, target: Path) -> Path | None:
 
 
 def save_series(series: pd.Series | None, target: Path) -> Path | None:
-    """保存序列，主文件用 parquet，CSV 作为备份。"""
+    """Sauvegarde une serie en parquet avec une copie CSV."""
 
     if series is None or series.empty:
         return None
@@ -156,7 +156,7 @@ def list_run_directories(user_name: str | None = None) -> list[Path]:
 
 
 def list_run_users() -> list[str]:
-    """返回有历史 run 的用户列表。"""
+    """Retourne la liste des utilisateurs disposant d'un historique."""
 
     base_dir = get_runs_dir()
     if not base_dir.exists():
@@ -165,7 +165,7 @@ def list_run_users() -> list[str]:
 
 
 def get_latest_run_directory(user_name: str | None = None) -> Path | None:
-    """返回最新的 run 目录。"""
+    """Retourne le dossier du run le plus recent."""
 
     run_dirs = list_run_directories(user_name=user_name)
     return run_dirs[0] if run_dirs else None

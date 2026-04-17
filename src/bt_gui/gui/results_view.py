@@ -185,11 +185,14 @@ class ResultsView(QWidget):
         self.run_selector.currentIndexChanged.connect(self._load_selected_run)
         self.load_history_button = QPushButton("Charger l'historique")
         self.load_history_button.setObjectName("SecondaryButton")
+        self.enable_sort_button = QPushButton("Activer le tri")
+        self.enable_sort_button.setObjectName("SecondaryButton")
         self.open_folder_button = QPushButton("Ouvrir le dossier")
         self.open_log_button = QPushButton("Ouvrir le journal")
         self.open_log_button.setObjectName("SecondaryButton")
         selector_layout.addWidget(self.run_selector, 1)
         selector_layout.addWidget(self.load_history_button)
+        selector_layout.addWidget(self.enable_sort_button)
         selector_layout.addWidget(self.open_folder_button)
         selector_layout.addWidget(self.open_log_button)
 
@@ -220,10 +223,10 @@ class ResultsView(QWidget):
 
         self.sec_list_table = QTableView()
         self.sec_list_table.setModel(self.sec_list_proxy)
-        self.sec_list_table.setSortingEnabled(True)
+        self.sec_list_table.setSortingEnabled(False)
         self.exclusions_table = QTableView()
         self.exclusions_table.setModel(self.exclusions_proxy)
-        self.exclusions_table.setSortingEnabled(True)
+        self.exclusions_table.setSortingEnabled(False)
         self.perf_ptf_table = QTableView()
         self.perf_ptf_table.setModel(self.perf_ptf_model)
         self.perf_bench_table = QTableView()
@@ -257,6 +260,7 @@ class ResultsView(QWidget):
         self.tabs.addTab(self.plot_tab, "Plot")
 
         self.load_history_button.clicked.connect(self._load_latest_history_result)
+        self.enable_sort_button.clicked.connect(self._enable_sorting)
         self.open_folder_button.clicked.connect(lambda: self._open_current_path("run_dir"))
         self.open_log_button.clicked.connect(lambda: self._open_current_path("run_log"))
         self._reset_artifact_views()
@@ -313,7 +317,7 @@ class ResultsView(QWidget):
         )
 
     def has_loaded_result(self) -> bool:
-        """返回结果页是否已经加载过结果。"""
+        """Indique si la vue des resultats a deja charge un contenu."""
 
         return self._current_result is not None or self._history_run_dir is not None or self._is_loading
 
@@ -350,7 +354,7 @@ class ResultsView(QWidget):
             self._set_current_run(run)
 
     def _load_latest_history_result(self) -> None:
-        """按需加载全局最新历史结果。"""
+        """Charge a la demande le run historique global le plus recent."""
 
         latest_run = get_latest_run_directory()
         if latest_run is None:
@@ -358,8 +362,16 @@ class ResultsView(QWidget):
             return
         self.load_run_directory(latest_run)
 
+    def _enable_sorting(self) -> None:
+        """Active le tri manuel pour les tables qui le supportent."""
+
+        self.sec_list_table.setSortingEnabled(True)
+        self.exclusions_table.setSortingEnabled(True)
+        self.enable_sort_button.setText("Tri active")
+        self.enable_sort_button.setEnabled(False)
+
     def _start_artifact_load(self, artifact_paths: dict[str, Path | None]) -> None:
-        """后台加载当前结果对应的 artefacts。"""
+        """Charge en arriere-plan les artefacts du resultat courant."""
 
         self._load_token += 1
         token = self._load_token
@@ -381,7 +393,7 @@ class ResultsView(QWidget):
         thread.start()
 
     def _handle_artifact_load_finished(self, token: int, payload: object) -> None:
-        """将后台加载结果应用到界面。"""
+        """Applique a l'interface les donnees chargees en arriere-plan."""
 
         if token != self._load_token:
             return
@@ -395,7 +407,7 @@ class ResultsView(QWidget):
         self._set_plot_content(payload.get("plot"))
 
     def _handle_artifact_load_failed(self, token: int, message: str) -> None:
-        """处理 artefacts 后台加载失败。"""
+        """Gere un echec de chargement des artefacts en arriere-plan."""
 
         if token != self._load_token:
             return
@@ -403,7 +415,7 @@ class ResultsView(QWidget):
         self._reset_artifact_views(message=f"Chargement impossible : {message}")
 
     def _cleanup_load_task(self, token: int) -> None:
-        """清理已结束的后台加载任务。"""
+        """Nettoie une tache de chargement terminee."""
 
         self._load_tasks.pop(token, None)
 
@@ -414,7 +426,7 @@ class ResultsView(QWidget):
         self.exclusions_filter.clear()
 
     def _reset_artifact_views(self, message: str = "Chargement des artefacts...") -> None:
-        """重置结果区，等待后台加载完成。"""
+        """Reinitialise la zone de resultats en attendant le chargement."""
 
         self.sec_list_model.set_dataframe(pd.DataFrame())
         self.exclusions_model.set_dataframe(pd.DataFrame())
@@ -423,7 +435,7 @@ class ResultsView(QWidget):
         self._set_plot_content(None, message=message)
 
     def _set_plot_content(self, plot_path: Path | None, message: str | None = None) -> None:
-        """更新 plot 标签页的内容。"""
+        """Met a jour le contenu de l'onglet du plot."""
 
         if self.plot_view is None:
             self.plot_message_label.setText("Qt WebEngine n'est pas disponible sur cette machine.")

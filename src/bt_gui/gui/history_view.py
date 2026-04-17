@@ -92,7 +92,7 @@ class HistoryView(QWidget):
         self._reload_history_list()
 
     def _reload_history_list(self) -> None:
-        """根据当前用户筛选刷新历史列表。"""
+        """Recharge la liste d'historique selon l'utilisateur selectionne."""
 
         user_name = self._selected_user()
         self.history_list.clear()
@@ -107,14 +107,14 @@ class HistoryView(QWidget):
             self.history_list.addItem(item)
 
     def _selected_user(self) -> str | None:
-        """返回当前选中的用户过滤条件。"""
+        """Retourne le filtre utilisateur actuellement selectionne."""
 
         if self.user_filter.count() == 0:
             return None
         return self.user_filter.currentData(Qt.UserRole)
 
     def _selected_run_dir(self) -> str | None:
-        """返回当前选中的 run 目录。"""
+        """Retourne le dossier du run actuellement selectionne."""
 
         item = self.history_list.currentItem()
         if item is None:

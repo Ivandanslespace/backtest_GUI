@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
         self.history_view.run_selected.connect(self._handle_history_selection)
 
     def _handle_navigation_change(self, index: int) -> None:
-        """处理侧边导航切换。"""
+        """Gere le changement de page depuis la navigation laterale."""
 
         self.stacked_widget.setCurrentIndex(index)
 
