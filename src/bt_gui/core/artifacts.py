@@ -89,22 +89,36 @@ def save_manifest(run_dir: Path, payload: dict[str, Any]) -> Path:
     return target
 
 
+def _backup_path(target: Path, suffix: str) -> Path:
+    """返回同名备份文件路径。"""
+
+    return target.parent / f"{target.stem}{suffix}"
+
+
 def save_dataframe(dataframe: pd.DataFrame | None, target: Path) -> Path | None:
-    """Sauvegarde un DataFrame dans un fichier Excel."""
+    """保存 DataFrame，主文件用 parquet，Excel 作为备份。"""
 
     if dataframe is None or dataframe.empty:
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.suffix.lower() == ".parquet":
+        dataframe.to_parquet(target, index=False)
+        dataframe.to_excel(_backup_path(target, ".xlsx"), index=False)
+        return target
     dataframe.to_excel(target, index=False)
     return target
 
 
 def save_series(series: pd.Series | None, target: Path) -> Path | None:
-    """Sauvegarde une serie dans un fichier CSV."""
+    """保存序列，主文件用 parquet，CSV 作为备份。"""
 
     if series is None or series.empty:
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.suffix.lower() == ".parquet":
+        series.reset_index(name=series.name or "value").to_parquet(target, index=False)
+        series.to_csv(_backup_path(target, ".csv"), header=True)
+        return target
     series.to_csv(target, header=True)
     return target
 
@@ -155,6 +169,22 @@ def get_latest_run_directory(user_name: str | None = None) -> Path | None:
 
     run_dirs = list_run_directories(user_name=user_name)
     return run_dirs[0] if run_dirs else None
+
+
+def resolve_existing_artifact_path(target: Path | None, *preferred_suffixes: str) -> Path | None:
+    """按优先顺序返回存在的 artefact 路径。"""
+
+    if target is None:
+        return None
+    candidates = []
+    for suffix in preferred_suffixes:
+        candidates.append(target.parent / f"{target.stem}{suffix}")
+    if target not in candidates:
+        candidates.append(target)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def read_manifest(run_dir: Path) -> dict[str, Any]:
