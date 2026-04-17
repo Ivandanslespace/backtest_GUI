@@ -390,11 +390,10 @@ class ResultsView(QWidget):
             f"Top : {self._format_bool(run_config.get('top'))}",
             f"Fill method : {self._coalesce(run_config.get('fill_method'))}",
             f"Production mensuelle : {self._format_bool(run_config.get('mode_monthly_prod'))}",
-            f"Neutralisation sectorielle : {self._format_bool(run_config.get('sector_neutral'))}",
         ]
 
     @staticmethod
-    def _format_summary_text(name_line: str, detail_lines: list[str], items_per_line: int = 3) -> str:
+    def _format_summary_text(name_line: str, detail_lines: list[str], items_per_line: int = 6) -> str:
         """Assemble le resume avec un nom seul puis des lignes compactes."""
 
         grouped_lines = [
