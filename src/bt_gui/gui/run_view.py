@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import traceback
 
 from PySide6.QtCore import QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -45,7 +46,9 @@ class RunWorker(QThread):
             )
             self.completed.emit(result)
         except Exception as exc:  # pragma: no cover - depend du runtime
-            self.failed.emit(str(exc))
+            summary = f"{type(exc).__name__}: {exc}"
+            details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
+            self.failed.emit(f"{summary}\n\nTraceback complet :\n{details}")
 
 
 class RunView(QWidget):
@@ -161,14 +164,24 @@ class RunView(QWidget):
         if result.is_batch:
             self._append_log(f"Batch termine : {len(result.runs)} runs.")
         else:
-            self._append_log("Run termine.")
+            latest_run = result.latest_run
+            if latest_run is not None and latest_run.status != "success":
+                self._append_log(f"Run termine en echec : {latest_run.message}")
+            else:
+                self._append_log("Run termine.")
         self.result_ready.emit(result)
 
     def _handle_failed(self, message: str) -> None:
         """Traite la fin en erreur du worker."""
 
-        self._append_log(f"Erreur critique : {message}")
-        QMessageBox.critical(self, "Execution impossible", message)
+        summary = message.splitlines()[0] if message else "Erreur inconnue"
+        self._append_log("Erreur critique :")
+        self._append_log(message)
+        QMessageBox.critical(
+            self,
+            "Execution impossible",
+            f"{summary}\n\nConsultez le journal d'execution pour le traceback complet.",
+        )
 
     def open_last_run_directory(self) -> None:
         """Ouvre le dossier du dernier run disponible."""

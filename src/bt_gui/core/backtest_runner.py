@@ -8,6 +8,7 @@ from itertools import product
 import importlib.util
 import io
 from pathlib import Path
+import traceback
 from types import ModuleType
 from typing import Callable, Any
 
@@ -277,14 +278,28 @@ class BacktestService:
             screen_df = load_tabular_file(settings.paths.screen)
             returns_df = load_tabular_file(settings.paths.returns)
         except Exception as exc:
+            summary = f"{type(exc).__name__}: {exc}"
+            details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
             report = ValidationReport()
-            report.add_error(f"Lecture des fichiers impossible : {exc}")
-            save_text(report.as_text(), artifacts.run_log)
+            report.add_error(f"Lecture des fichiers impossible : {summary}")
+            self._emit(
+                f"Lecture des fichiers impossible : {summary}",
+                logger=logger,
+                progress_callback=progress_callback,
+                collector=log_lines,
+            )
+            self._emit(
+                f"Traceback complet :\n{details}",
+                logger=logger,
+                progress_callback=progress_callback,
+                collector=log_lines,
+            )
+            save_text("\n".join(log_lines), artifacts.run_log)
             save_manifest(
                 run_dir,
                 {
                     "status": "failed",
-                    "message": str(exc),
+                    "message": summary,
                     "mode": settings.run.mode,
                     "bench": settings.run.bench,
                     "metrics": settings.run.metrics,
@@ -293,7 +308,7 @@ class BacktestService:
             return SingleRunResult(
                 name=run_label,
                 status="failed",
-                message=str(exc),
+                message=summary,
                 mode=settings.run.mode,
                 artifacts=artifacts,
                 validation=report,
@@ -427,8 +442,16 @@ class BacktestService:
             )
 
         except Exception as exc:  # pragma: no cover - execution dependante des donnees
+            summary = f"{type(exc).__name__}: {exc}"
+            details = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).strip()
             self._emit(
-                f"Echec du run : {exc}",
+                f"Echec du run : {summary}",
+                logger=logger,
+                progress_callback=progress_callback,
+                collector=log_lines,
+            )
+            self._emit(
+                f"Traceback complet :\n{details}",
                 logger=logger,
                 progress_callback=progress_callback,
                 collector=log_lines,
@@ -438,7 +461,7 @@ class BacktestService:
                 run_dir,
                 {
                     "status": "failed",
-                    "message": str(exc),
+                    "message": summary,
                     "mode": settings.run.mode,
                     "bench": settings.run.bench,
                     "metrics": settings.run.metrics,
@@ -448,7 +471,7 @@ class BacktestService:
             return SingleRunResult(
                 name=run_label,
                 status="failed",
-                message=str(exc),
+                message=summary,
                 mode=settings.run.mode,
                 artifacts=artifacts,
                 validation=validation,
