@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyModel, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QSortFilterProxyModel, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
@@ -108,22 +108,51 @@ class DataFrameFilterProxyModel(QSortFilterProxyModel):
             return str(left.data(Qt.DisplayRole)).casefold() < str(right.data(Qt.DisplayRole)).casefold()
 
 
-class PlotWindow(QWidget):
-    """Fenetre dediee a l'affichage du plot."""
+class ArtifactLoadWorker(QObject):
+    """Charge les artefacts tabulaires hors du thread UI."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        if QWebEngineView is None:
-            raise RuntimeError("Qt WebEngine est indisponible.")
-        self.setWindowTitle("Perf plot")
-        self.resize(1200, 800)
-        layout = QVBoxLayout(self)
-        self._view = QWebEngineView(self)
-        layout.addWidget(self._view)
+    finished = Signal(int, object)
+    failed = Signal(int, str)
 
-    def load_plot(self, plot_path: Path) -> None:
-        self.setWindowTitle(f"Perf plot - {plot_path.parent.name}")
-        self._view.load(QUrl.fromLocalFile(str(plot_path.resolve())))
+    def __init__(self, token: int, artifact_paths: dict[str, Path | None]) -> None:
+        super().__init__()
+        self._token = token
+        self._artifact_paths = artifact_paths
+
+    def run(self) -> None:
+        """Lit les artefacts dans un thread secondaire."""
+
+        try:
+            payload = {
+                "sec_list": self._load_dataframe(self._artifact_paths.get("sec_list")),
+                "exclusions": self._load_dataframe(self._artifact_paths.get("exclusions")),
+                "perf_ptf": self._load_dataframe(self._artifact_paths.get("perf_ptf")),
+                "perf_bench": self._load_dataframe(self._artifact_paths.get("perf_bench")),
+                "plot": self._resolve_plot(self._artifact_paths.get("plot")),
+            }
+        except Exception as exc:  # pragma: no cover - depend du filesystem
+            self.failed.emit(self._token, f"{type(exc).__name__}: {exc}")
+            return
+        self.finished.emit(self._token, payload)
+
+    @staticmethod
+    def _load_dataframe(file_path: Path | None) -> pd.DataFrame:
+        """Charge un artefact tabulaire en DataFrame."""
+
+        if file_path is None or not file_path.exists():
+            return pd.DataFrame()
+        suffix = file_path.suffix.lower()
+        if suffix in {".xlsx", ".xls"}:
+            return pd.read_excel(file_path)
+        return pd.read_csv(file_path)
+
+    @staticmethod
+    def _resolve_plot(file_path: Path | None) -> Path | None:
+        """Retourne le chemin du plot s'il existe."""
+
+        if file_path is None or not file_path.exists():
+            return None
+        return file_path
 
 
 class ResultsView(QWidget):
@@ -134,7 +163,9 @@ class ResultsView(QWidget):
         self._current_result: ServiceResult | None = None
         self._current_run: SingleRunResult | None = None
         self._history_run_dir: Path | None = None
-        self._plot_window: PlotWindow | None = None
+        self._load_token = 0
+        self._is_loading = False
+        self._load_tasks: dict[int, tuple[QThread, ArtifactLoadWorker]] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -156,13 +187,10 @@ class ResultsView(QWidget):
         self.run_selector = QComboBox()
         self.run_selector.currentIndexChanged.connect(self._load_selected_run)
         self.open_folder_button = QPushButton("Ouvrir le dossier")
-        self.open_plot_button = QPushButton("Afficher le plot")
-        self.open_plot_button.setObjectName("SecondaryButton")
         self.open_log_button = QPushButton("Ouvrir le journal")
         self.open_log_button.setObjectName("SecondaryButton")
         selector_layout.addWidget(self.run_selector, 1)
         selector_layout.addWidget(self.open_folder_button)
-        selector_layout.addWidget(self.open_plot_button)
         selector_layout.addWidget(self.open_log_button)
 
         header_layout.addWidget(title)
@@ -200,6 +228,17 @@ class ResultsView(QWidget):
         self.perf_ptf_table.setModel(self.perf_ptf_model)
         self.perf_bench_table = QTableView()
         self.perf_bench_table.setModel(self.perf_bench_model)
+        self.plot_tab = QWidget()
+        plot_layout = QVBoxLayout(self.plot_tab)
+        self.plot_message_label = QLabel("Aucun plot charge.")
+        self.plot_message_label.setObjectName("MutedLabel")
+        self.plot_message_label.setAlignment(Qt.AlignCenter)
+        self.plot_message_label.setWordWrap(True)
+        plot_layout.addWidget(self.plot_message_label)
+        self.plot_view = QWebEngineView(self.plot_tab) if QWebEngineView is not None else None
+        if self.plot_view is not None:
+            self.plot_view.hide()
+            plot_layout.addWidget(self.plot_view, 1)
 
         sec_list_tab = QWidget()
         sec_list_layout = QVBoxLayout(sec_list_tab)
@@ -215,10 +254,11 @@ class ResultsView(QWidget):
         self.tabs.addTab(exclusions_tab, "Exclusions")
         self.tabs.addTab(self.perf_ptf_table, "Perf PTF")
         self.tabs.addTab(self.perf_bench_table, "Perf Bench")
+        self.tabs.addTab(self.plot_tab, "Plot")
 
         self.open_folder_button.clicked.connect(lambda: self._open_current_path("run_dir"))
-        self.open_plot_button.clicked.connect(self._open_plot_window)
         self.open_log_button.clicked.connect(lambda: self._open_current_path("run_log"))
+        self._reset_artifact_views()
 
     def load_service_result(self, result: ServiceResult) -> None:
         """Charge un resultat simple ou batch."""
@@ -226,11 +266,15 @@ class ResultsView(QWidget):
         self._current_result = result
         self._history_run_dir = None
         self._reset_filters()
+        self.run_selector.blockSignals(True)
         self.run_selector.clear()
         for run in result.runs:
             self.run_selector.addItem(run.name, userData=run)
+        self.run_selector.blockSignals(False)
         if result.runs:
             self._set_current_run(result.runs[0])
+        else:
+            self._reset_artifact_views()
 
     def load_run_directory(self, run_dir: str | Path) -> None:
         """Charge un run a partir de son dossier."""
@@ -242,8 +286,10 @@ class ResultsView(QWidget):
         self._reset_filters()
         manifest = read_manifest(path)
         history_message = manifest.get("message", "Run charge depuis l'historique")
+        self.run_selector.blockSignals(True)
         self.run_selector.clear()
         self.run_selector.addItem(f"{path.parent.name} / {path.name}")
+        self.run_selector.blockSignals(False)
         self.summary_label.setText(
             "\n".join(
                 [
@@ -255,16 +301,20 @@ class ResultsView(QWidget):
                 ]
             )
         )
-
-        self._load_dataframe_into_model(path / "sec_list.xlsx", self.sec_list_model)
-        self._load_dataframe_into_model(path / "exclusions.xlsx", self.exclusions_model)
-        self._load_dataframe_into_model(path / "perf_ptf.csv", self.perf_ptf_model)
-        self._load_dataframe_into_model(path / "perf_bench.csv", self.perf_bench_model)
+        self._start_artifact_load(
+            {
+                "sec_list": path / "sec_list.xlsx",
+                "exclusions": path / "exclusions.xlsx",
+                "perf_ptf": path / "perf_ptf.csv",
+                "perf_bench": path / "perf_bench.csv",
+                "plot": path / "plot.html",
+            }
+        )
 
     def has_loaded_result(self) -> bool:
         """返回结果页是否已经加载过结果。"""
 
-        return self._current_result is not None or self._history_run_dir is not None
+        return self._current_result is not None or self._history_run_dir is not None or self._is_loading
 
     def _set_current_run(self, run: SingleRunResult) -> None:
         """Met a jour la vue avec un run choisi."""
@@ -280,11 +330,15 @@ class ResultsView(QWidget):
                 ]
             )
         )
-
-        self._load_dataframe_into_model(run.artifacts.sec_list, self.sec_list_model)
-        self._load_dataframe_into_model(run.artifacts.exclusions, self.exclusions_model)
-        self._load_dataframe_into_model(run.artifacts.perf_ptf, self.perf_ptf_model)
-        self._load_dataframe_into_model(run.artifacts.perf_bench, self.perf_bench_model)
+        self._start_artifact_load(
+            {
+                "sec_list": run.artifacts.sec_list,
+                "exclusions": run.artifacts.exclusions,
+                "perf_ptf": run.artifacts.perf_ptf,
+                "perf_bench": run.artifacts.perf_bench,
+                "plot": run.artifacts.plot,
+            }
+        )
 
     def _load_selected_run(self) -> None:
         """Charge le run selectionne dans la liste."""
@@ -294,25 +348,86 @@ class ResultsView(QWidget):
             self._reset_filters()
             self._set_current_run(run)
 
-    def _load_dataframe_into_model(self, file_path: Path | None, model: DataFrameTableModel) -> None:
-        """Charge un artefact tabulaire dans un modele."""
+    def _start_artifact_load(self, artifact_paths: dict[str, Path | None]) -> None:
+        """后台加载当前结果对应的 artefacts。"""
 
-        if file_path is None or not Path(file_path).exists():
-            model.set_dataframe(pd.DataFrame())
+        self._load_token += 1
+        token = self._load_token
+        self._is_loading = True
+        self._reset_artifact_views()
+        thread = QThread(self)
+        worker = ArtifactLoadWorker(token, artifact_paths)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._handle_artifact_load_finished)
+        worker.failed.connect(self._handle_artifact_load_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda finished_token=token: self._cleanup_load_task(finished_token))
+        self._load_tasks[token] = (thread, worker)
+        thread.start()
+
+    def _handle_artifact_load_finished(self, token: int, payload: object) -> None:
+        """将后台加载结果应用到界面。"""
+
+        if token != self._load_token:
             return
+        self._is_loading = False
+        if not isinstance(payload, dict):
+            return
+        self.sec_list_model.set_dataframe(payload.get("sec_list"))
+        self.exclusions_model.set_dataframe(payload.get("exclusions"))
+        self.perf_ptf_model.set_dataframe(payload.get("perf_ptf"))
+        self.perf_bench_model.set_dataframe(payload.get("perf_bench"))
+        self._set_plot_content(payload.get("plot"))
 
-        suffix = Path(file_path).suffix.lower()
-        if suffix in {".xlsx", ".xls"}:
-            dataframe = pd.read_excel(file_path)
-        else:
-            dataframe = pd.read_csv(file_path)
-        model.set_dataframe(dataframe)
+    def _handle_artifact_load_failed(self, token: int, message: str) -> None:
+        """处理 artefacts 后台加载失败。"""
+
+        if token != self._load_token:
+            return
+        self._is_loading = False
+        self._reset_artifact_views(message=f"Chargement impossible : {message}")
+
+    def _cleanup_load_task(self, token: int) -> None:
+        """清理已结束的后台加载任务。"""
+
+        self._load_tasks.pop(token, None)
 
     def _reset_filters(self) -> None:
         """Reinitialise les filtres de table."""
 
         self.sec_list_filter.clear()
         self.exclusions_filter.clear()
+
+    def _reset_artifact_views(self, message: str = "Chargement des artefacts...") -> None:
+        """重置结果区，等待后台加载完成。"""
+
+        self.sec_list_model.set_dataframe(pd.DataFrame())
+        self.exclusions_model.set_dataframe(pd.DataFrame())
+        self.perf_ptf_model.set_dataframe(pd.DataFrame())
+        self.perf_bench_model.set_dataframe(pd.DataFrame())
+        self._set_plot_content(None, message=message)
+
+    def _set_plot_content(self, plot_path: Path | None, message: str | None = None) -> None:
+        """更新 plot 标签页的内容。"""
+
+        if self.plot_view is None:
+            self.plot_message_label.setText("Qt WebEngine n'est pas disponible sur cette machine.")
+            self.plot_message_label.show()
+            return
+        if plot_path is None:
+            self.plot_view.hide()
+            self.plot_view.setHtml("")
+            self.plot_message_label.setText(message or "Le plot n'est pas disponible.")
+            self.plot_message_label.show()
+            return
+        self.plot_message_label.hide()
+        self.plot_view.show()
+        self.plot_view.load(QUrl.fromLocalFile(str(plot_path.resolve())))
 
     def _resolve_current_path(self, attribute_name: str) -> Path | None:
         """Retourne le chemin associe au run courant."""
@@ -345,23 +460,3 @@ class ResultsView(QWidget):
             return
 
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-
-    def _open_plot_window(self) -> None:
-        """Ouvre le plot dans une fenetre dediee."""
-
-        path = self._resolve_current_path("plot")
-        if path is None:
-            QMessageBox.information(self, "Aucun run", "Aucun run n'est actuellement charge.")
-            return
-        if not path.exists():
-            QMessageBox.information(self, "Fichier absent", "Le plot n'est pas disponible.")
-            return
-        if QWebEngineView is None:
-            QMessageBox.information(self, "Module absent", "Qt WebEngine n'est pas disponible sur cette machine.")
-            return
-        if self._plot_window is None:
-            self._plot_window = PlotWindow()
-        self._plot_window.load_plot(path)
-        self._plot_window.show()
-        self._plot_window.raise_()
-        self._plot_window.activateWindow()
