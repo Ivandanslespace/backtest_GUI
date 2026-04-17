@@ -25,7 +25,7 @@ try:
 except ImportError:  # pragma: no cover - depend de l'environnement Qt
     QWebEngineView = None
 
-from bt_gui.core.artifacts import get_latest_run_directory, read_manifest, resolve_existing_artifact_path
+from bt_gui.core.artifacts import get_latest_run_directory, read_manifest
 from bt_gui.core.backtest_runner import ServiceResult, SingleRunResult
 
 RAW_VALUE_ROLE = Qt.UserRole + 1
@@ -139,15 +139,9 @@ class ArtifactLoadWorker(QObject):
     def _load_dataframe(file_path: Path | None) -> pd.DataFrame:
         """Charge un artefact tabulaire en DataFrame."""
 
-        resolved_path = resolve_existing_artifact_path(file_path, ".parquet", ".xlsx", ".xls", ".csv")
-        if resolved_path is None:
+        if file_path is None or not file_path.exists():
             return pd.DataFrame()
-        suffix = resolved_path.suffix.lower()
-        if suffix == ".parquet":
-            return pd.read_parquet(resolved_path)
-        if suffix in {".xlsx", ".xls"}:
-            return pd.read_excel(resolved_path)
-        return pd.read_csv(resolved_path)
+        return pd.read_parquet(file_path)
 
     @staticmethod
     def _resolve_plot(file_path: Path | None) -> Path | None:

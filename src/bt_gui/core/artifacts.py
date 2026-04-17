@@ -171,22 +171,6 @@ def get_latest_run_directory(user_name: str | None = None) -> Path | None:
     return run_dirs[0] if run_dirs else None
 
 
-def resolve_existing_artifact_path(target: Path | None, *preferred_suffixes: str) -> Path | None:
-    """按优先顺序返回存在的 artefact 路径。"""
-
-    if target is None:
-        return None
-    candidates = []
-    for suffix in preferred_suffixes:
-        candidates.append(target.parent / f"{target.stem}{suffix}")
-    if target not in candidates:
-        candidates.append(target)
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def read_manifest(run_dir: Path) -> dict[str, Any]:
     """Lit le manifeste d'un run si disponible."""
 
