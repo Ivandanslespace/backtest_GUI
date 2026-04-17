@@ -11,7 +11,7 @@ import re
 import pandas as pd
 import yaml
 
-from ma_librairie.config.settings import AppSettings
+from bt_gui.config.settings import AppSettings
 
 
 def get_project_root() -> Path:

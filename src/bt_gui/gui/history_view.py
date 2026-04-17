@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ma_librairie.core.artifacts import list_run_directories, read_manifest
+from bt_gui.core.artifacts import list_run_directories, read_manifest
 
 
 class HistoryView(QWidget):

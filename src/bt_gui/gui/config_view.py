@@ -26,9 +26,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ma_librairie.config import list_available_profiles, load_settings, save_settings
-from ma_librairie.config.settings import AppSettings
-from ma_librairie.core.backtest_runner import BacktestService
+from bt_gui.config import list_available_profiles, load_settings, save_settings
+from bt_gui.config.settings import AppSettings
+from bt_gui.core.backtest_runner import BacktestService
 
 
 def _make_path_row(button_text: str) -> tuple[QWidget, QLineEdit, QPushButton]:

@@ -13,8 +13,8 @@ from typing import Callable, Any
 
 import pandas as pd
 
-from ma_librairie.app_logging import get_logger
-from ma_librairie.config.settings import AppSettings
+from bt_gui.app_logging import get_logger
+from bt_gui.config.settings import AppSettings
 from .artifacts import (
     RunArtifacts,
     create_run_directory,

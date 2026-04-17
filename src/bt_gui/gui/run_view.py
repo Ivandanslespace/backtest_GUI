@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ma_librairie.config.settings import AppSettings
-from ma_librairie.core.backtest_runner import BacktestService, ServiceResult
+from bt_gui.config.settings import AppSettings
+from bt_gui.core.backtest_runner import BacktestService, ServiceResult
 
 
 class RunWorker(QThread):

@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-backtest-gui = "ma_librairie.runner:main"
+backtest-gui = "bt_gui.runner:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

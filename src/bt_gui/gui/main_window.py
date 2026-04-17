@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ma_librairie.core.backtest_runner import BacktestService, ServiceResult
+from bt_gui.core.backtest_runner import BacktestService, ServiceResult
 
 from .config_view import ConfigView
 from .history_view import HistoryView

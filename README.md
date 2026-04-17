@@ -24,7 +24,7 @@ Backtest_GUI/
 ├── runs/
 ├── pyproject.toml
 └── src/
-    └── ma_librairie/
+    └── bt_gui/
 ```
 
 ## Installation
@@ -42,7 +42,7 @@ backtest-gui
 ou :
 
 ```bash
-python -m ma_librairie.runner
+python -m bt_gui.runner
 ```
 
 ## Remarques

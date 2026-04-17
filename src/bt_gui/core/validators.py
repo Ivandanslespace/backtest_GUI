@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
-from ma_librairie.config.settings import AppSettings
+from bt_gui.config.settings import AppSettings
 
 
 WEIGHT_PREFIX = "Weight in "

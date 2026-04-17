@@ -67,7 +67,7 @@ if not defined PY_CMD (
 )
 
 REM Verifier que les dependances minimales sont disponibles.
-"%PY_CMD%" -c "import PySide6, pandas, plotly, yaml; import ma_librairie" >nul 2>&1
+"%PY_CMD%" -c "import PySide6, pandas, plotly, yaml; import bt_gui" >nul 2>&1
 if errorlevel 1 (
     echo.
     echo Les dependances du projet ne sont pas installees.
@@ -80,24 +80,24 @@ if errorlevel 1 (
 
 REM Lancer l'application sans garder une console ouverte si possible.
 if defined PY_GUI_CMD (
-    start "" "%PY_GUI_CMD%" -m ma_librairie.runner
+    start "" "%PY_GUI_CMD%" -m bt_gui.runner
     exit /b 0
 )
 
 where pythonw >nul 2>&1
 if not errorlevel 1 (
-    start "" pythonw -m ma_librairie.runner
+    start "" pythonw -m bt_gui.runner
     exit /b 0
 )
 
 where pyw >nul 2>&1
 if not errorlevel 1 (
-    start "" pyw -m ma_librairie.runner
+    start "" pyw -m bt_gui.runner
     exit /b 0
 )
 
 REM Repli sur le mode console standard.
-"%PY_CMD%" -m ma_librairie.runner
+"%PY_CMD%" -m bt_gui.runner
 if errorlevel 1 (
     echo.
     echo Le lancement de Backtest GUI a echoue.

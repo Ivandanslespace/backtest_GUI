@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ma_librairie.core.artifacts import read_manifest
-from ma_librairie.core.backtest_runner import ServiceResult, SingleRunResult
+from bt_gui.core.artifacts import read_manifest
+from bt_gui.core.backtest_runner import ServiceResult, SingleRunResult
 
 
 class DataFrameTableModel(QAbstractTableModel):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ma_librairie.gui.app import run_app
+from bt_gui.gui.app import run_app
 
 
 def main() -> int:
