@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import yaml
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QSortFilterProxyModel, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -291,6 +292,7 @@ class ResultsView(QWidget):
         self._reset_filters()
         manifest = read_manifest(path)
         history_message = manifest.get("message", "Run charge depuis l'historique")
+        config_snapshot = self._read_config_snapshot(path / "config_snapshot.yaml")
         if replace_selector:
             self.run_selector.blockSignals(True)
             self.run_selector.clear()
@@ -300,10 +302,13 @@ class ResultsView(QWidget):
             "\n".join(
                 [
                     f"Nom : {path.name}",
-                    f"Utilisateur : {path.parent.name}",
                     f"Statut : {manifest.get('status', 'unknown')}",
-                    f"Benchmark : {manifest.get('bench', '-')}",
                     f"Message : {history_message}",
+                    *self._build_config_summary_lines(
+                        config_snapshot,
+                        fallback_user=path.parent.name,
+                        fallback_bench=manifest.get("bench", "-"),
+                    ),
                 ]
             )
         )
@@ -322,17 +327,87 @@ class ResultsView(QWidget):
 
         return self._current_result is not None or self._history_run_dir is not None or self._is_loading
 
+    @staticmethod
+    def _read_config_snapshot(config_path: Path | None) -> dict[str, object]:
+        """Lit le snapshot de configuration d'un run."""
+
+        if config_path is None or not config_path.exists():
+            return {}
+        try:
+            with config_path.open("r", encoding="utf-8") as handle:
+                payload = yaml.safe_load(handle) or {}
+        except Exception:  # pragma: no cover - depend du filesystem
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _as_mapping(payload: dict[str, object], key: str) -> dict[str, object]:
+        """Retourne un sous-dictionnaire s'il existe."""
+
+        value = payload.get(key)
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _coalesce(value: object, fallback: str = "-") -> object:
+        """Retourne une valeur exploitable pour l'affichage."""
+
+        if value is None or value == "":
+            return fallback
+        if isinstance(value, list) and not value:
+            return fallback
+        return value
+
+    @staticmethod
+    def _format_bool(value: object) -> str:
+        """Formate un booleen pour l'affichage."""
+
+        if isinstance(value, bool):
+            return "oui" if value else "non"
+        return "-"
+
+    def _build_config_summary_lines(
+        self,
+        config_snapshot: dict[str, object],
+        *,
+        fallback_user: str = "-",
+        fallback_mode: str = "-",
+        fallback_bench: str = "-",
+    ) -> list[str]:
+        """Construit les lignes de resume des parametres cles."""
+
+        user_config = self._as_mapping(config_snapshot, "user")
+        run_config = self._as_mapping(config_snapshot, "run")
+        metrics = self._coalesce(run_config.get("metrics"), "-")
+        metrics_text = ", ".join(str(item) for item in metrics) if isinstance(metrics, list) else str(metrics)
+        return [
+            f"Utilisateur : {self._coalesce(user_config.get('name'), fallback_user)}",
+            f"Mode : {self._coalesce(run_config.get('mode'), fallback_mode)}",
+            f"PTF : {self._coalesce(run_config.get('ptf_name'))}",
+            f"Benchmark : {self._coalesce(run_config.get('bench'), fallback_bench)}",
+            f"Metrics : {metrics_text or '-'}",
+            f"Date de debut : {self._coalesce(run_config.get('start_date'))}",
+            f"Percentile : {self._coalesce(run_config.get('percentile'))}",
+            f"Top : {self._format_bool(run_config.get('top'))}",
+            f"Fill method : {self._coalesce(run_config.get('fill_method'))}",
+            f"Production mensuelle : {self._format_bool(run_config.get('mode_monthly_prod'))}",
+            f"Neutralisation sectorielle : {self._format_bool(run_config.get('sector_neutral'))}",
+        ]
+
     def _set_current_run(self, run: SingleRunResult) -> None:
         """Met a jour la vue avec un run choisi."""
 
         self._current_run = run
+        config_snapshot = self._read_config_snapshot(run.artifacts.config_snapshot)
         self.summary_label.setText(
             "\n".join(
                 [
                     f"Nom : {run.name}",
                     f"Statut : {run.status}",
-                    f"Mode : {run.mode}",
                     f"Message : {run.message}",
+                    *self._build_config_summary_lines(
+                        config_snapshot,
+                        fallback_mode=run.mode,
+                    ),
                 ]
             )
         )
