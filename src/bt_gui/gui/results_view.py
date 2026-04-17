@@ -25,7 +25,7 @@ try:
 except ImportError:  # pragma: no cover - depend de l'environnement Qt
     QWebEngineView = None
 
-from bt_gui.core.artifacts import read_manifest
+from bt_gui.core.artifacts import get_latest_run_directory, read_manifest
 from bt_gui.core.backtest_runner import ServiceResult, SingleRunResult
 
 RAW_VALUE_ROLE = Qt.UserRole + 1
@@ -186,10 +186,13 @@ class ResultsView(QWidget):
         selector_layout = QHBoxLayout()
         self.run_selector = QComboBox()
         self.run_selector.currentIndexChanged.connect(self._load_selected_run)
+        self.load_history_button = QPushButton("Charger l'historique")
+        self.load_history_button.setObjectName("SecondaryButton")
         self.open_folder_button = QPushButton("Ouvrir le dossier")
         self.open_log_button = QPushButton("Ouvrir le journal")
         self.open_log_button.setObjectName("SecondaryButton")
         selector_layout.addWidget(self.run_selector, 1)
+        selector_layout.addWidget(self.load_history_button)
         selector_layout.addWidget(self.open_folder_button)
         selector_layout.addWidget(self.open_log_button)
 
@@ -256,6 +259,7 @@ class ResultsView(QWidget):
         self.tabs.addTab(self.perf_bench_table, "Perf Bench")
         self.tabs.addTab(self.plot_tab, "Plot")
 
+        self.load_history_button.clicked.connect(self._load_latest_history_result)
         self.open_folder_button.clicked.connect(lambda: self._open_current_path("run_dir"))
         self.open_log_button.clicked.connect(lambda: self._open_current_path("run_log"))
         self._reset_artifact_views()
@@ -347,6 +351,15 @@ class ResultsView(QWidget):
         if isinstance(run, SingleRunResult):
             self._reset_filters()
             self._set_current_run(run)
+
+    def _load_latest_history_result(self) -> None:
+        """按需加载全局最新历史结果。"""
+
+        latest_run = get_latest_run_directory()
+        if latest_run is None:
+            QMessageBox.information(self, "Aucun historique", "Aucun run historique n'est disponible.")
+            return
+        self.load_run_directory(latest_run)
 
     def _start_artifact_load(self, artifact_paths: dict[str, Path | None]) -> None:
         """后台加载当前结果对应的 artefacts。"""

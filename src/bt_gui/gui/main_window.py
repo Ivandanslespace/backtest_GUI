@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bt_gui.core.artifacts import get_latest_run_directory
 from bt_gui.core.backtest_runner import BacktestService, ServiceResult
 
 from .config_view import ConfigView
@@ -103,18 +102,6 @@ class MainWindow(QMainWindow):
         """处理侧边导航切换。"""
 
         self.stacked_widget.setCurrentIndex(index)
-        if index == 2:
-            self._maybe_load_latest_history_result()
-
-    def _maybe_load_latest_history_result(self) -> None:
-        """首次进入结果页时自动加载最新历史结果。"""
-
-        if self.results_view.has_loaded_result():
-            return
-        latest_run = get_latest_run_directory()
-        if latest_run is None:
-            return
-        self.results_view.load_run_directory(latest_run)
 
     def _handle_run_result(self, result: ServiceResult) -> None:
         """Affiche les resultats a la fin d'un run."""
