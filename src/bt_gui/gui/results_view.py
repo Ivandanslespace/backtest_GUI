@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 import pandas as pd
@@ -161,6 +162,7 @@ class ResultsView(QWidget):
         self._current_result: ServiceResult | None = None
         self._current_run: SingleRunResult | None = None
         self._history_run_dir: Path | None = None
+        self._previous_summary_config: dict[str, str] | None = None
         self._load_token = 0
         self._is_loading = False
         self._load_tasks: dict[int, tuple[QThread, ArtifactLoadWorker]] = {}
@@ -180,6 +182,7 @@ class ResultsView(QWidget):
         self.summary_label = QLabel("Aucun resultat charge.")
         self.summary_label.setWordWrap(True)
         self.summary_label.setObjectName("MutedLabel")
+        self.summary_label.setTextFormat(Qt.RichText)
 
         selector_layout = QHBoxLayout()
         self.run_selector = QComboBox()
@@ -298,19 +301,15 @@ class ResultsView(QWidget):
             self.run_selector.clear()
             self.run_selector.addItem(f"{path.parent.name} / {path.name}", userData=str(path))
             self.run_selector.blockSignals(False)
-        self.summary_label.setText(
-            self._format_summary_text(
-                f"Nom : {path.name}",
-                [
-                    f"Statut : {manifest.get('status', 'unknown')}",
-                    f"Message : {history_message}",
-                    *self._build_config_summary_lines(
-                        config_snapshot,
-                        fallback_user=path.parent.name,
-                        fallback_bench=manifest.get("bench", "-"),
-                    ),
-                ],
-            )
+        self._set_summary_text(
+            name=path.name,
+            status=str(manifest.get("status", "unknown")),
+            message=str(history_message),
+            config_items=self._build_config_summary_items(
+                config_snapshot,
+                fallback_user=path.parent.name,
+                fallback_bench=manifest.get("bench", "-"),
+            ),
         )
         self._start_artifact_load(
             {
@@ -365,32 +364,39 @@ class ResultsView(QWidget):
             return "oui" if value else "non"
         return "-"
 
-    def _build_config_summary_lines(
+    def _build_config_summary_items(
         self,
         config_snapshot: dict[str, object],
         *,
         fallback_user: str = "-",
         fallback_mode: str = "-",
         fallback_bench: str = "-",
-    ) -> list[str]:
-        """Construit les lignes de resume des parametres cles."""
+    ) -> list[tuple[str, str]]:
+        """Construit les parametres cles a afficher dans le resume."""
 
         user_config = self._as_mapping(config_snapshot, "user")
         run_config = self._as_mapping(config_snapshot, "run")
         metrics = self._coalesce(run_config.get("metrics"), "-")
         metrics_text = ", ".join(str(item) for item in metrics) if isinstance(metrics, list) else str(metrics)
         return [
-            f"Utilisateur : {self._coalesce(user_config.get('name'), fallback_user)}",
-            f"Mode : {self._coalesce(run_config.get('mode'), fallback_mode)}",
-            f"PTF : {self._coalesce(run_config.get('ptf_name'))}",
-            f"Benchmark : {self._coalesce(run_config.get('bench'), fallback_bench)}",
-            f"Metrics : {metrics_text or '-'}",
-            f"Date de debut : {self._coalesce(run_config.get('start_date'))}",
-            f"Percentile : {self._coalesce(run_config.get('percentile'))}",
-            f"Top : {self._format_bool(run_config.get('top'))}",
-            f"Fill method : {self._coalesce(run_config.get('fill_method'))}",
-            f"Production mensuelle : {self._format_bool(run_config.get('mode_monthly_prod'))}",
+            ("Utilisateur", str(self._coalesce(user_config.get("name"), fallback_user))),
+            ("Mode", str(self._coalesce(run_config.get("mode"), fallback_mode))),
+            ("PTF", str(self._coalesce(run_config.get("ptf_name")))),
+            ("Benchmark", str(self._coalesce(run_config.get("bench"), fallback_bench))),
+            ("Metrics", metrics_text or "-"),
+            ("Date de debut", str(self._coalesce(run_config.get("start_date")))),
+            ("Percentile", str(self._coalesce(run_config.get("percentile")))),
+            ("Top", self._format_bool(run_config.get("top"))),
+            ("Fill method", str(self._coalesce(run_config.get("fill_method")))),
+            ("Production mensuelle", self._format_bool(run_config.get("mode_monthly_prod"))),
         ]
+
+    @staticmethod
+    def _format_summary_item(label: str, value: str, *, highlight: bool = False) -> str:
+        """Formate un item du resume, avec emphase si necessaire."""
+
+        text = html.escape(f"{label} : {value}")
+        return f"<b>{text}</b>" if highlight else text
 
     @staticmethod
     def _format_summary_text(name_line: str, detail_lines: list[str], items_per_line: int = 6) -> str:
@@ -401,25 +407,53 @@ class ResultsView(QWidget):
             for index in range(0, len(detail_lines), items_per_line)
             if detail_lines[index : index + items_per_line]
         ]
-        return "\n".join([name_line, *grouped_lines])
+        return "<br>".join([name_line, *grouped_lines])
+
+    def _set_summary_text(
+        self,
+        *,
+        name: str,
+        status: str,
+        message: str,
+        config_items: list[tuple[str, str]],
+    ) -> None:
+        """Met a jour le resume superieur en mettant en evidence les differences."""
+
+        previous_config = self._previous_summary_config or {}
+        current_config = {label: value for label, value in config_items}
+        detail_lines = [
+            self._format_summary_item("Statut", status),
+            self._format_summary_item("Message", message),
+            *[
+                self._format_summary_item(
+                    label,
+                    value,
+                    highlight=label in previous_config and previous_config[label] != value,
+                )
+                for label, value in config_items
+            ],
+        ]
+        self.summary_label.setText(
+            self._format_summary_text(
+                self._format_summary_item("Nom", name),
+                detail_lines,
+            )
+        )
+        self._previous_summary_config = current_config
 
     def _set_current_run(self, run: SingleRunResult) -> None:
         """Met a jour la vue avec un run choisi."""
 
         self._current_run = run
         config_snapshot = self._read_config_snapshot(run.artifacts.config_snapshot)
-        self.summary_label.setText(
-            self._format_summary_text(
-                f"Nom : {run.name}",
-                [
-                    f"Statut : {run.status}",
-                    f"Message : {run.message}",
-                    *self._build_config_summary_lines(
-                        config_snapshot,
-                        fallback_mode=run.mode,
-                    ),
-                ],
-            )
+        self._set_summary_text(
+            name=run.name,
+            status=run.status,
+            message=run.message,
+            config_items=self._build_config_summary_items(
+                config_snapshot,
+                fallback_mode=run.mode,
+            ),
         )
         self._start_artifact_load(
             {

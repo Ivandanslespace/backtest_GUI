@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListView,
@@ -26,7 +27,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bt_gui.config import list_available_profiles, load_settings, save_settings
+from bt_gui.config import (
+    create_profile_from_settings,
+    list_available_profiles,
+    load_settings,
+    rename_profile_from_settings,
+    save_settings,
+)
 from bt_gui.config.settings import AppSettings
 from bt_gui.core.backtest_runner import BacktestService
 
@@ -64,9 +71,10 @@ class ConfigView(QWidget):
     def __init__(self, service: BacktestService, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._service = service
+        self._current_profile_name = "user1"
         self._settings = load_settings("user1")
         self._build_ui()
-        self.apply_settings(self._settings)
+        self.apply_settings(self._settings, profile_name=self._current_profile_name)
         self.refresh_inspection()
 
     def _build_ui(self) -> None:
@@ -98,11 +106,17 @@ class ConfigView(QWidget):
         self.profile_combo.addItems(list_available_profiles())
         self.load_button = QPushButton("Charger")
         self.save_button = QPushButton("Enregistrer")
+        self.create_button = QPushButton("Nouveau")
+        self.create_button.setObjectName("SecondaryButton")
+        self.rename_button = QPushButton("Renommer")
+        self.rename_button.setObjectName("SecondaryButton")
         self.inspect_button = QPushButton("Actualiser l'inspection")
         self.inspect_button.setObjectName("SecondaryButton")
         controls_box.addWidget(self.profile_combo)
         controls_box.addWidget(self.load_button)
         controls_box.addWidget(self.save_button)
+        controls_box.addWidget(self.create_button)
+        controls_box.addWidget(self.rename_button)
         controls_box.addWidget(self.inspect_button)
 
         header_layout.addLayout(title_box, 1)
@@ -121,6 +135,8 @@ class ConfigView(QWidget):
 
         self.load_button.clicked.connect(self.load_profile)
         self.save_button.clicked.connect(self.save_profile)
+        self.create_button.clicked.connect(self.create_profile)
+        self.rename_button.clicked.connect(self.rename_profile)
         self.inspect_button.clicked.connect(self.refresh_inspection)
 
     def _build_data_tab(self) -> None:
@@ -493,16 +509,73 @@ class ConfigView(QWidget):
         self._settings = settings
         return settings
 
-    def apply_settings(self, settings: AppSettings) -> None:
-        """Injecte une configuration dans le formulaire."""
+    def _refresh_profile_combo(self, profile_name: str) -> None:
+        """Recharge la liste des profils et selectionne le profil actif."""
 
-        self._settings = settings.copy()
         available_profiles = list_available_profiles()
         self.profile_combo.clear()
         self.profile_combo.addItems(available_profiles)
-        if settings.user.name and settings.user.name not in available_profiles:
-            self.profile_combo.addItem(settings.user.name)
-        self.profile_combo.setCurrentText(settings.user.name)
+        if profile_name and profile_name not in available_profiles:
+            self.profile_combo.addItem(profile_name)
+        self.profile_combo.setCurrentText(profile_name)
+
+    @staticmethod
+    def _validate_profile_name(profile_name: str) -> str:
+        """Valide un nom de profil utilisateur."""
+
+        normalized_name = profile_name.strip()
+        if not normalized_name:
+            raise ValueError("Le nom du profil ne peut pas etre vide.")
+        if normalized_name.lower() == "default":
+            raise ValueError("Le nom 'default' est reserve.")
+        return normalized_name
+
+    def _suggest_profile_name(self) -> str:
+        """Construit une proposition de nom pour un nouveau profil."""
+
+        current_name = self._current_profile_name or self.user_name_edit.text().strip() or "user1"
+        if current_name == "default":
+            return "user1_copy"
+        return f"{current_name}_copy"
+
+    def _create_profile_copy(self, profile_name: str) -> Path:
+        """Cree un profil a partir du formulaire courant."""
+
+        normalized_name = self._validate_profile_name(profile_name)
+        settings = self.build_settings().copy()
+        target = create_profile_from_settings(settings, normalized_name)
+        settings.user.name = normalized_name
+        self.apply_settings(settings, profile_name=normalized_name)
+        self.settings_changed.emit(settings)
+        return target
+
+    def _rename_current_profile(self, profile_name: str) -> Path:
+        """Renomme le profil actif en conservant le formulaire courant."""
+
+        source_name = self._current_profile_name or self.profile_combo.currentText().strip()
+        if not source_name:
+            raise ValueError("Aucun profil courant a renommer.")
+        if source_name == "default":
+            raise ValueError("Le profil 'default' ne peut pas etre renomme.")
+
+        normalized_name = self._validate_profile_name(profile_name)
+        if normalized_name == source_name:
+            raise ValueError("Le nouveau nom doit etre different du nom courant.")
+
+        settings = self.build_settings().copy()
+        target = rename_profile_from_settings(source_name, normalized_name, settings)
+        settings.user.name = normalized_name
+        self.apply_settings(settings, profile_name=normalized_name)
+        self.settings_changed.emit(settings)
+        return target
+
+    def apply_settings(self, settings: AppSettings, profile_name: str | None = None) -> None:
+        """Injecte une configuration dans le formulaire."""
+
+        self._settings = settings.copy()
+        current_profile_name = profile_name or settings.user.name
+        self._current_profile_name = current_profile_name
+        self._refresh_profile_combo(current_profile_name)
 
         self.user_name_edit.setText(settings.user.name)
         self.mode_combo.setCurrentText(settings.run.mode)
@@ -547,7 +620,7 @@ class ConfigView(QWidget):
         profile_name = self.profile_combo.currentText().strip() or "default"
         try:
             settings = load_settings(profile_name)
-            self.apply_settings(settings)
+            self.apply_settings(settings, profile_name=profile_name)
             self.refresh_inspection()
             self.settings_changed.emit(self.build_settings())
         except Exception as exc:  # pragma: no cover - interaction utilisateur
@@ -558,13 +631,52 @@ class ConfigView(QWidget):
 
         try:
             settings = self.build_settings()
-            profile_name = settings.user.name or self.profile_combo.currentText().strip() or "user1"
+            profile_name = self._current_profile_name or self.profile_combo.currentText().strip() or settings.user.name or "user1"
+            profile_name = self._validate_profile_name(profile_name)
+            settings.user.name = profile_name
             target = save_settings(settings, profile_name=profile_name)
-            self.profile_combo.setCurrentText(profile_name)
+            self.apply_settings(settings, profile_name=profile_name)
             QMessageBox.information(self, "Configuration enregistree", f"Configuration sauvegardee dans :\n{target}")
             self.settings_changed.emit(settings)
         except Exception as exc:  # pragma: no cover - interaction utilisateur
             QMessageBox.critical(self, "Sauvegarde impossible", str(exc))
+
+    def create_profile(self) -> None:
+        """Demande un nom puis cree un nouveau profil utilisateur."""
+
+        profile_name, accepted = QInputDialog.getText(
+            self,
+            "Nouveau profil",
+            "Nom du nouveau profil :",
+            text=self._suggest_profile_name(),
+        )
+        if not accepted:
+            return
+
+        try:
+            target = self._create_profile_copy(profile_name)
+            QMessageBox.information(self, "Profil cree", f"Nouveau profil cree dans :\n{target}")
+        except Exception as exc:  # pragma: no cover - interaction utilisateur
+            QMessageBox.critical(self, "Creation impossible", str(exc))
+
+    def rename_profile(self) -> None:
+        """Demande un nom puis renomme le profil actif."""
+
+        current_name = self._current_profile_name or self.profile_combo.currentText().strip()
+        profile_name, accepted = QInputDialog.getText(
+            self,
+            "Renommer le profil",
+            "Nouveau nom du profil :",
+            text=current_name,
+        )
+        if not accepted:
+            return
+
+        try:
+            target = self._rename_current_profile(profile_name)
+            QMessageBox.information(self, "Profil renomme", f"Profil renomme dans :\n{target}")
+        except Exception as exc:  # pragma: no cover - interaction utilisateur
+            QMessageBox.critical(self, "Renommage impossible", str(exc))
 
     def refresh_inspection(self) -> None:
         """Recharge l'inspection des fichiers de donnees."""
