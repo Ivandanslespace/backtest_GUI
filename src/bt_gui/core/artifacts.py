@@ -121,15 +121,40 @@ def list_run_directories(user_name: str | None = None) -> list[Path]:
     """Retourne la liste des dossiers de runs, du plus recent au plus ancien."""
 
     base_dir = get_runs_dir()
-    if user_name:
-        base_dir = base_dir / user_name
     if not base_dir.exists():
         return []
+    if user_name:
+        base_dir = base_dir / user_name
+        if not base_dir.exists():
+            return []
+        run_dirs = [path for path in base_dir.iterdir() if path.is_dir()]
+    else:
+        run_dirs = []
+        for user_dir in base_dir.iterdir():
+            if not user_dir.is_dir():
+                continue
+            run_dirs.extend(path for path in user_dir.iterdir() if path.is_dir())
     return sorted(
-        [path for path in base_dir.iterdir() if path.is_dir()],
+        run_dirs,
         key=lambda item: item.stat().st_mtime,
         reverse=True,
     )
+
+
+def list_run_users() -> list[str]:
+    """返回有历史 run 的用户列表。"""
+
+    base_dir = get_runs_dir()
+    if not base_dir.exists():
+        return []
+    return sorted((path.name for path in base_dir.iterdir() if path.is_dir()), key=str.casefold)
+
+
+def get_latest_run_directory(user_name: str | None = None) -> Path | None:
+    """返回最新的 run 目录。"""
+
+    run_dirs = list_run_directories(user_name=user_name)
+    return run_dirs[0] if run_dirs else None
 
 
 def read_manifest(run_dir: Path) -> dict[str, Any]:

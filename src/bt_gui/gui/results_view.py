@@ -237,16 +237,34 @@ class ResultsView(QWidget):
 
         path = Path(run_dir)
         self._history_run_dir = path
+        self._current_result = None
         self._current_run = None
         self._reset_filters()
         manifest = read_manifest(path)
-        summary = manifest.get("message", "Run charge depuis l'historique")
-        self.summary_label.setText(summary)
+        history_message = manifest.get("message", "Run charge depuis l'historique")
+        self.run_selector.clear()
+        self.run_selector.addItem(f"{path.parent.name} / {path.name}")
+        self.summary_label.setText(
+            "\n".join(
+                [
+                    f"Nom : {path.name}",
+                    f"Utilisateur : {path.parent.name}",
+                    f"Statut : {manifest.get('status', 'unknown')}",
+                    f"Benchmark : {manifest.get('bench', '-')}",
+                    f"Message : {history_message}",
+                ]
+            )
+        )
 
         self._load_dataframe_into_model(path / "sec_list.xlsx", self.sec_list_model)
         self._load_dataframe_into_model(path / "exclusions.xlsx", self.exclusions_model)
         self._load_dataframe_into_model(path / "perf_ptf.csv", self.perf_ptf_model)
         self._load_dataframe_into_model(path / "perf_bench.csv", self.perf_bench_model)
+
+    def has_loaded_result(self) -> bool:
+        """返回结果页是否已经加载过结果。"""
+
+        return self._current_result is not None or self._history_run_dir is not None
 
     def _set_current_run(self, run: SingleRunResult) -> None:
         """Met a jour la vue avec un run choisi."""

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bt_gui.core.artifacts import get_latest_run_directory
 from bt_gui.core.backtest_runner import BacktestService, ServiceResult
 
 from .config_view import ConfigView
@@ -85,18 +86,35 @@ class MainWindow(QMainWindow):
         self.config_view = ConfigView(self._service)
         self.run_view = RunView(self._service, settings_provider=self.config_view.build_settings)
         self.results_view = ResultsView()
-        self.history_view = HistoryView(user_provider=lambda: self.config_view.build_settings().user.name)
+        self.history_view = HistoryView()
 
         self.stacked_widget.addWidget(self.config_view)
         self.stacked_widget.addWidget(self.run_view)
         self.stacked_widget.addWidget(self.results_view)
         self.stacked_widget.addWidget(self.history_view)
 
-        self.navigation_list.currentRowChanged.connect(self.stacked_widget.setCurrentIndex)
+        self.navigation_list.currentRowChanged.connect(self._handle_navigation_change)
         self.config_view.settings_changed.connect(lambda _settings: self.run_view.refresh_summary())
         self.config_view.settings_changed.connect(lambda _settings: self.history_view.refresh_history())
         self.run_view.result_ready.connect(self._handle_run_result)
         self.history_view.run_selected.connect(self._handle_history_selection)
+
+    def _handle_navigation_change(self, index: int) -> None:
+        """处理侧边导航切换。"""
+
+        self.stacked_widget.setCurrentIndex(index)
+        if index == 2:
+            self._maybe_load_latest_history_result()
+
+    def _maybe_load_latest_history_result(self) -> None:
+        """首次进入结果页时自动加载最新历史结果。"""
+
+        if self.results_view.has_loaded_result():
+            return
+        latest_run = get_latest_run_directory()
+        if latest_run is None:
+            return
+        self.results_view.load_run_directory(latest_run)
 
     def _handle_run_result(self, result: ServiceResult) -> None:
         """Affiche les resultats a la fin d'un run."""
