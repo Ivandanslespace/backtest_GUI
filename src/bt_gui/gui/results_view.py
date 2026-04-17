@@ -299,9 +299,9 @@ class ResultsView(QWidget):
             self.run_selector.addItem(f"{path.parent.name} / {path.name}", userData=str(path))
             self.run_selector.blockSignals(False)
         self.summary_label.setText(
-            "\n".join(
+            self._format_summary_text(
+                f"Nom : {path.name}",
                 [
-                    f"Nom : {path.name}",
                     f"Statut : {manifest.get('status', 'unknown')}",
                     f"Message : {history_message}",
                     *self._build_config_summary_lines(
@@ -309,7 +309,7 @@ class ResultsView(QWidget):
                         fallback_user=path.parent.name,
                         fallback_bench=manifest.get("bench", "-"),
                     ),
-                ]
+                ],
             )
         )
         self._start_artifact_load(
@@ -393,22 +393,33 @@ class ResultsView(QWidget):
             f"Neutralisation sectorielle : {self._format_bool(run_config.get('sector_neutral'))}",
         ]
 
+    @staticmethod
+    def _format_summary_text(name_line: str, detail_lines: list[str], items_per_line: int = 3) -> str:
+        """Assemble le resume avec un nom seul puis des lignes compactes."""
+
+        grouped_lines = [
+            " | ".join(detail_lines[index : index + items_per_line])
+            for index in range(0, len(detail_lines), items_per_line)
+            if detail_lines[index : index + items_per_line]
+        ]
+        return "\n".join([name_line, *grouped_lines])
+
     def _set_current_run(self, run: SingleRunResult) -> None:
         """Met a jour la vue avec un run choisi."""
 
         self._current_run = run
         config_snapshot = self._read_config_snapshot(run.artifacts.config_snapshot)
         self.summary_label.setText(
-            "\n".join(
+            self._format_summary_text(
+                f"Nom : {run.name}",
                 [
-                    f"Nom : {run.name}",
                     f"Statut : {run.status}",
                     f"Message : {run.message}",
                     *self._build_config_summary_lines(
                         config_snapshot,
                         fallback_mode=run.mode,
                     ),
-                ]
+                ],
             )
         )
         self._start_artifact_load(
